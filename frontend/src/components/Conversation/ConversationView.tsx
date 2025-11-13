@@ -24,6 +24,8 @@ export default function ConversationView() {
 
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [topic, setTopic] = useState('');
+  const [userName, setUserName] = useState('');
+  const [userRole, setUserRole] = useState('');
   const [hasStarted, setHasStarted] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [agentsStartFirst, setAgentsStartFirst] = useState(false);
@@ -79,7 +81,7 @@ export default function ConversationView() {
       return;
     }
 
-    startConversation(selectedAgentIds, topic, agentsStartFirst, agentOnlyMode);
+    startConversation(selectedAgentIds, topic, agentsStartFirst, agentOnlyMode, userName, userRole);
     setHasStarted(true);
   };
 
@@ -195,6 +197,34 @@ export default function ConversationView() {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="e.g., Technical interview for a senior developer position"
             />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Your Name <span className="text-gray-400">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={userName}
+                onChange={(e) => setUserName(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="e.g., Christian"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Your Role <span className="text-gray-400">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={userRole}
+                onChange={(e) => setUserRole(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="e.g., Software Engineer"
+              />
+            </div>
           </div>
 
           <div className="space-y-3">

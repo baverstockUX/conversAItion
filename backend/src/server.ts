@@ -81,9 +81,9 @@ io.on('connection', (socket: Socket) => {
   console.log(`Client connected: ${socket.id}`);
 
   // Start conversation
-  socket.on('conversation:start', async (data: { agentIds: string[]; topic: string; agentsStartFirst?: boolean; agentOnlyMode?: boolean; title?: string }) => {
+  socket.on('conversation:start', async (data: { agentIds: string[]; topic: string; agentsStartFirst?: boolean; agentOnlyMode?: boolean; userName?: string; userRole?: string; title?: string }) => {
     try {
-      const { agentIds, topic, agentsStartFirst = false, agentOnlyMode = false, title } = data;
+      const { agentIds, topic, agentsStartFirst = false, agentOnlyMode = false, userName, userRole, title } = data;
 
       // Create conversation in database
       const conversation = ConversationModel.create({
@@ -92,8 +92,8 @@ io.on('connection', (socket: Socket) => {
         agentIds,
       });
 
-      // Start orchestrator
-      await orchestrator.startConversation(conversation.id, agentIds, topic, agentsStartFirst, agentOnlyMode);
+      // Start orchestrator with user context
+      await orchestrator.startConversation(conversation.id, agentIds, topic, agentsStartFirst, agentOnlyMode, userName, userRole);
 
       // Send success response
       socket.emit('conversation:started', {
@@ -101,7 +101,7 @@ io.on('connection', (socket: Socket) => {
         agents: conversation.agentIds,
       });
 
-      console.log(`Conversation started: ${conversation.id}${agentsStartFirst ? ' (agents will start)' : ''}`);
+      console.log(`Conversation started: ${conversation.id}${agentsStartFirst ? ' (agents will start)' : ''}${userName ? ` with ${userName}${userRole ? ` (${userRole})` : ''}` : ''}`);
     } catch (error: any) {
       console.error('Error starting conversation:', error);
       socket.emit('error', { message: error.message });

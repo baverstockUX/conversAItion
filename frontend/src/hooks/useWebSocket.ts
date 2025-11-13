@@ -104,13 +104,13 @@ export function useWebSocket() {
   }, []);
 
   const startConversation = useCallback(
-    (agentIds: string[], topic: string, agentsStartFirst: boolean = false, agentOnlyMode: boolean = false, title?: string) => {
+    (agentIds: string[], topic: string, agentsStartFirst: boolean = false, agentOnlyMode: boolean = false, userName?: string, userRole?: string, title?: string) => {
       if (!socketRef.current) {
         setError('WebSocket not connected');
         return;
       }
 
-      socketRef.current.emit('conversation:start', { agentIds, topic, agentsStartFirst, agentOnlyMode, title });
+      socketRef.current.emit('conversation:start', { agentIds, topic, agentsStartFirst, agentOnlyMode, userName, userRole, title });
     },
     []
   );

@@ -13,10 +13,10 @@ export class LMStudioService {
    * Generate agent response using local LM Studio model
    * This is much faster than Bedrock but uses a smaller model
    */
-  static async generateAgentResponse(agent: Agent, allAgents: Agent[], conversationHistory: Message[], isAgentOnlyMode: boolean = false): Promise<string> {
+  static async generateAgentResponse(agent: Agent, allAgents: Agent[], conversationHistory: Message[], isAgentOnlyMode: boolean = false, userName?: string, userRole?: string): Promise<string> {
     try {
       // Format conversation history for the model
-      const messages = this.formatMessagesForLMStudio(agent, allAgents, conversationHistory, isAgentOnlyMode);
+      const messages = this.formatMessagesForLMStudio(agent, allAgents, conversationHistory, isAgentOnlyMode, userName, userRole);
 
       // Call LM Studio OpenAI-compatible endpoint
       const response = await axios.post(
@@ -60,7 +60,7 @@ export class LMStudioService {
   /**
    * Format conversation history for LM Studio (OpenAI format)
    */
-  private static formatMessagesForLMStudio(agent: Agent, allAgents: Agent[], conversationHistory: Message[], isAgentOnlyMode: boolean = false): any[] {
+  private static formatMessagesForLMStudio(agent: Agent, allAgents: Agent[], conversationHistory: Message[], isAgentOnlyMode: boolean = false, userName?: string, userRole?: string): any[] {
     // Extract topic from system message if present
     const systemMsg = conversationHistory.find(m => m.speaker === 'system');
     const topic = systemMsg ? systemMsg.text.replace('The conversation topic is: ', '') : '';
@@ -83,7 +83,15 @@ YOU ARE IN A MULTI-PARTY CONVERSATION with the following participants:`;
     if (otherAgents.length > 0) {
       systemContent += '\n' + otherAgents.map(a => `- ${a.name} (${a.role})`).join('\n');
     }
-    systemContent += '\n- User (human participant)';
+
+    // Add user with their name and role if provided
+    if (userName && userRole) {
+      systemContent += `\n- ${userName} (${userRole}, human participant)`;
+    } else if (userName) {
+      systemContent += `\n- ${userName} (human participant)`;
+    } else {
+      systemContent += '\n- User (human participant)';
+    }
 
     if (isAgentOnlyMode) {
       if (isFirstAgent && topic) {
@@ -114,8 +122,11 @@ You are having a discussion with other AI agents (no human present) about: "${to
     systemContent += `
 
 Guidelines:
-- Stay in character at all times
-- Respond naturally and conversationally
+- You have a specific role and expertise, but you're a PERSON first, not a job title
+- Only draw on your professional background when it's genuinely relevant to the topic
+- If the topic isn't related to your expertise, just be yourself and engage naturally
+- Don't force your role into every conversation - that's annoying and unnatural
+- Respond naturally and conversationally as a real person would
 - Keep responses concise (2-3 sentences max)
 - Show personality through word choice and tone
 - React to what others say, don't just state facts

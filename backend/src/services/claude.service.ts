@@ -38,7 +38,9 @@ export class ClaudeService {
     agent: Agent,
     allAgents: Agent[],
     conversationHistory: Message[],
-    isAgentOnlyMode: boolean = false
+    isAgentOnlyMode: boolean = false,
+    userName?: string,
+    userRole?: string
   ): Promise<string> {
     const messages = this.formatMessagesForClaude(conversationHistory, agent.id, allAgents);
 
@@ -46,7 +48,7 @@ export class ClaudeService {
       anthropic_version: 'bedrock-2023-05-31',
       max_tokens: 150, // Keep responses concise for conversation flow
       temperature: 0.8, // Slightly creative for personality
-      system: this.buildSystemPrompt(agent, allAgents, conversationHistory, isAgentOnlyMode),
+      system: this.buildSystemPrompt(agent, allAgents, conversationHistory, isAgentOnlyMode, userName, userRole),
       messages,
     };
 
@@ -235,7 +237,7 @@ Return ONLY valid JSON, no additional text.
   /**
    * Build system prompt for agent
    */
-  private static buildSystemPrompt(agent: Agent, allAgents: Agent[], conversationHistory: Message[], isAgentOnlyMode: boolean = false): string {
+  private static buildSystemPrompt(agent: Agent, allAgents: Agent[], conversationHistory: Message[], isAgentOnlyMode: boolean = false, userName?: string, userRole?: string): string {
     // Extract topic from system message if present
     const systemMsg = conversationHistory.find(m => m.speaker === 'system');
     const topic = systemMsg ? systemMsg.text.replace('The conversation topic is: ', '') : '';
@@ -257,7 +259,15 @@ YOU ARE IN A MULTI-PARTY CONVERSATION with the following participants:`;
     if (otherAgents.length > 0) {
       prompt += '\n' + otherAgents.map(a => `- ${a.name} (${a.role})`).join('\n');
     }
-    prompt += '\n- User (human participant)';
+
+    // Add user with their name and role if provided
+    if (userName && userRole) {
+      prompt += `\n- ${userName} (${userRole}, human participant)`;
+    } else if (userName) {
+      prompt += `\n- ${userName} (human participant)`;
+    } else {
+      prompt += '\n- User (human participant)';
+    }
 
     if (isAgentOnlyMode) {
       if (isFirstAgent && topic) {
@@ -288,8 +298,11 @@ You are having a discussion with other AI agents (no human present) about: "${to
     prompt += `
 
 Guidelines:
-- Stay strictly in character at all times
-- Respond naturally and conversationally
+- You have a specific role and expertise, but you're a PERSON first, not a job title
+- Only draw on your professional background when it's genuinely relevant to the topic
+- If the topic isn't related to your expertise, just be yourself and engage naturally
+- Don't force your role into every conversation - that's annoying and unnatural
+- Respond naturally and conversationally as a real person would
 - Keep responses concise (2-4 sentences typically)
 - React to what others say, don't ignore previous messages
 - IMPORTANT: Address other participants by name when responding to them or bringing them into the discussion

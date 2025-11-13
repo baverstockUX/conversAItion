@@ -3,6 +3,26 @@ import { useAgents } from '../../hooks/useAgents';
 import { voicesApi } from '../../services/api';
 import type { Agent, ElevenLabsVoice } from '../../types';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+// Helper function to get full avatar URL
+const getAvatarUrl = (avatarUrl: string): string => {
+  // If it starts with /uploads, prepend the API base URL
+  if (avatarUrl.startsWith('/uploads')) {
+    return `${API_BASE_URL}${avatarUrl}`;
+  }
+  // Otherwise return as-is (for default avatars or external URLs)
+  return avatarUrl;
+};
+
+// Helper function to generate avatar URL using DiceBear API
+const generateAvatarUrl = (name: string): string => {
+  // Use DiceBear's avataaars style with the agent's name as seed
+  // This ensures consistent avatars for the same name
+  const seed = encodeURIComponent(name);
+  return `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}`;
+};
+
 export default function AgentCreator() {
   const { agents, loading, createAgent, deleteAgent, uploadAvatar } = useAgents();
   const [voices, setVoices] = useState<ElevenLabsVoice[]>([]);
@@ -12,7 +32,7 @@ export default function AgentCreator() {
     role: '',
     persona: '',
     voiceId: '',
-    avatarUrl: '/avatars/default.png',
+    avatarUrl: generateAvatarUrl(''),
   });
 
   useEffect(() => {
@@ -30,7 +50,7 @@ export default function AgentCreator() {
         role: '',
         persona: '',
         voiceId: '',
-        avatarUrl: '/avatars/default.png',
+        avatarUrl: generateAvatarUrl(''),
       });
     } catch (error) {
       console.error('Error creating agent:', error);
@@ -71,7 +91,15 @@ export default function AgentCreator() {
                 type="text"
                 required
                 value={formData.name}
-                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                onChange={(e) => {
+                  const newName = e.target.value;
+                  setFormData((prev) => ({
+                    ...prev,
+                    name: newName,
+                    // Auto-generate avatar URL based on name (if no custom avatar uploaded)
+                    avatarUrl: prev.avatarUrl.startsWith('/uploads') ? prev.avatarUrl : generateAvatarUrl(newName)
+                  }));
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
                 placeholder="e.g., Dr. Sarah Chen"
               />
@@ -110,22 +138,58 @@ export default function AgentCreator() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
               >
                 <option value="">Select a voice...</option>
-                {voices.map((voice) => (
-                  <option key={voice.voice_id} value={voice.voice_id}>
-                    {voice.name}
-                  </option>
-                ))}
+                {voices.map((voice) => {
+                  // Build voice description from labels
+                  const labels = voice.labels || {};
+                  const accent = labels.accent;
+                  const gender = labels.gender;
+                  const age = labels.age;
+                  const useCase = labels['use case'];
+
+                  // Create a descriptive label
+                  const parts = [voice.name];
+                  if (accent) parts.push(`${accent}`);
+                  if (gender) parts.push(`${gender}`);
+                  if (age) parts.push(`${age}`);
+
+                  const displayName = parts.join(' • ');
+
+                  return (
+                    <option key={voice.voice_id} value={voice.voice_id}>
+                      {displayName}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Avatar</label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleAvatarUpload}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Avatar Preview
+              </label>
+              <div className="flex items-center gap-4 mb-4">
+                <img
+                  src={formData.avatarUrl}
+                  alt="Avatar preview"
+                  className="w-24 h-24 rounded-full object-cover border-2 border-gray-200"
+                />
+                <div className="flex-1">
+                  <p className="text-sm text-gray-600 mb-2">
+                    {formData.avatarUrl.startsWith('https://api.dicebear.com')
+                      ? '✨ Auto-generated avatar based on name'
+                      : '📤 Custom uploaded avatar'}
+                  </p>
+                  <label className="cursor-pointer inline-block px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors">
+                    Upload Custom Avatar
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
             </div>
 
             <button
@@ -150,7 +214,7 @@ export default function AgentCreator() {
           {agents.map((agent) => (
             <div key={agent.id} className="bg-white p-6 rounded-lg shadow-md">
               <img
-                src={agent.avatarUrl}
+                src={getAvatarUrl(agent.avatarUrl)}
                 alt={agent.name}
                 className="w-24 h-24 rounded-full mx-auto mb-4 object-cover"
                 onError={(e) => {

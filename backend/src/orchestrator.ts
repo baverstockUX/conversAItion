@@ -18,6 +18,8 @@ export interface ConversationState {
   isInterrupted: boolean;
   audioPlaybackResolver?: () => void;
   agentOnlyMode: boolean;
+  userName?: string;
+  userRole?: string;
   preparedFollowUp?: {
     agentId: string;
     agentName: string;
@@ -25,6 +27,7 @@ export interface ConversationState {
     audioBuffer: Buffer;
     preparationStartTime: number;
   };
+  lastAudioEmitTime?: number;
 }
 
 export class ConversationOrchestrator extends EventEmitter {
@@ -50,7 +53,7 @@ export class ConversationOrchestrator extends EventEmitter {
   /**
    * Start a new conversation
    */
-  async startConversation(conversationId: string, agentIds: string[], topic: string, agentsStartFirst: boolean = false, agentOnlyMode: boolean = false): Promise<void> {
+  async startConversation(conversationId: string, agentIds: string[], topic: string, agentsStartFirst: boolean = false, agentOnlyMode: boolean = false, userName?: string, userRole?: string): Promise<void> {
     // Validate agents exist
     const agents = AgentModel.findByIds(agentIds);
 
@@ -76,6 +79,8 @@ export class ConversationOrchestrator extends EventEmitter {
       status: 'idle',
       isInterrupted: false,
       agentOnlyMode,
+      userName,
+      userRole,
     };
 
     this.conversations.set(conversationId, state);
@@ -230,14 +235,14 @@ export class ConversationOrchestrator extends EventEmitter {
 
         try {
           // Try LM Studio for fast local inference
-          text = await LMStudioService.generateAgentResponse(agent, state.agents, state.messages, state.agentOnlyMode);
+          text = await LMStudioService.generateAgentResponse(agent, state.agents, state.messages, state.agentOnlyMode, state.userName, state.userRole);
           // Use Claude for accurate scoring (determines turn-taking)
           score = await ClaudeService.scoreResponse(agent, text, state.messages);
         } catch (error: any) {
           // Fallback to Claude for both response and scoring if LM Studio unavailable
           if (error.message.includes('LM Studio server not running')) {
             console.log(`LM Studio unavailable, falling back to Claude for ${agent.name}`);
-            text = await ClaudeService.generateAgentResponse(agent, state.agents, state.messages, state.agentOnlyMode);
+            text = await ClaudeService.generateAgentResponse(agent, state.agents, state.messages, state.agentOnlyMode, state.userName, state.userRole);
             score = await ClaudeService.scoreResponse(agent, text, state.messages);
           } else {
             throw error;
@@ -285,6 +290,19 @@ export class ConversationOrchestrator extends EventEmitter {
 
       this.emit('transcript:update', conversationId, message);
 
+      // 🚀 PIPELINE OPTIMIZATION: Start preparing follow-up RIGHT NOW (before TTS)
+      // Text response is ready, so next agent can start generating while we do TTS
+      let followUpPreparationPromise: Promise<void> | null = null;
+
+      if (state.agents.length > 1 && !state.isInterrupted) {
+        console.log('🚀 Pipeline: Starting follow-up preparation BEFORE TTS (parallel with audio generation)...');
+        // Clear any previous prepared follow-up
+        state.preparedFollowUp = undefined;
+
+        // Start preparing next agent response in parallel (don't await)
+        followUpPreparationPromise = this.prepareFollowUp(conversationId, selectedAgent.id);
+      }
+
       // Generate audio using streaming TTS (faster than non-streaming)
       console.log('Generating audio with streaming TTS...');
       const audioStream = await TTSService.synthesizeStream(bestResponse.text, selectedAgent.voiceId);
@@ -307,7 +325,10 @@ export class ConversationOrchestrator extends EventEmitter {
       }
 
       // Send complete audio to frontend
+      const audioEmitTime = Date.now();
+      state.lastAudioEmitTime = audioEmitTime;
       this.emit('agent:audio', conversationId, audioBuffer);
+      console.log(`📤 Audio emitted for ${selectedAgent.name} at T=${audioEmitTime}`);
 
       // Wait for frontend to signal audio playback completion
       console.log('Waiting for frontend audio playback to complete...');
@@ -334,6 +355,9 @@ export class ConversationOrchestrator extends EventEmitter {
         const originalResolver = state.audioPlaybackResolver;
         state.audioPlaybackResolver = () => {
           clearInterval(checkInterval);
+          const audioEndTime = Date.now();
+          const playbackDuration = state.lastAudioEmitTime ? audioEndTime - state.lastAudioEmitTime : 0;
+          console.log(`🎵 Audio playback ended at T=${audioEndTime}, duration: ${playbackDuration}ms`);
           if (originalResolver) {
             originalResolver();
           }
@@ -343,6 +367,17 @@ export class ConversationOrchestrator extends EventEmitter {
 
       // Check if another agent wants to continue the conversation
       if (state.agents.length > 1 && !state.isInterrupted) {
+        // Wait for pipeline preparation to complete (if it started and isn't done yet)
+        if (followUpPreparationPromise && !state.preparedFollowUp) {
+          console.log('⏳ Preparation still running, waiting for completion...');
+          const waitStart = Date.now();
+          await followUpPreparationPromise;
+          const waitTime = Date.now() - waitStart;
+          console.log(`✅ Preparation completed after ${waitTime}ms wait`);
+        } else if (state.preparedFollowUp) {
+          console.log('✅ Preparation already complete, no wait needed! Proceeding immediately...');
+        }
+
         if (state.agentOnlyMode) {
           // In agent-only mode, always continue with another agent
           await this.continueAgentOnlyConversation(conversationId, selectedAgent.id);
@@ -365,6 +400,134 @@ export class ConversationOrchestrator extends EventEmitter {
   }
 
   /**
+   * Prepare follow-up response in parallel while audio is playing
+   * This reduces latency by pipelining generation and TTS
+   */
+  private async prepareFollowUp(conversationId: string, lastSpeakerId: string): Promise<void> {
+    const state = this.conversations.get(conversationId);
+
+    if (!state || state.isInterrupted) {
+      return;
+    }
+
+    const prepStart = Date.now();
+    console.log('🚀 Pipeline: Starting follow-up preparation in parallel with audio playback...');
+
+    try {
+      // Check if we've hit the maximum number of agent turns
+      const turnsSinceUser = state.messages.slice().reverse().findIndex(m => m.speaker === 'user');
+      const MAX_AGENT_TURNS = 3;
+
+      if (turnsSinceUser >= MAX_AGENT_TURNS) {
+        console.log('Pipeline: Max turns reached, skipping preparation');
+        return;
+      }
+
+      // Generate responses from OTHER agents (exclude the one who just spoke)
+      const otherAgents = state.agents.filter(a => a.id !== lastSpeakerId);
+
+      if (otherAgents.length === 0) {
+        console.log('Pipeline: No other agents, skipping preparation');
+        return;
+      }
+
+      // Check for interruption before expensive operations
+      if (state.isInterrupted) {
+        console.log('Pipeline: Interrupted during setup, aborting');
+        return;
+      }
+
+      // Generate follow-up responses in parallel
+      const followUpPromises = otherAgents.map(async (agent) => {
+        let text: string;
+        let score: number;
+
+        try {
+          text = await LMStudioService.generateAgentResponse(agent, state.agents, state.messages, state.agentOnlyMode);
+          score = await ClaudeService.scoreResponse(agent, text, state.messages);
+        } catch (error: any) {
+          if (error.message.includes('LM Studio server not running')) {
+            console.log(`Pipeline: LM Studio unavailable, falling back to Claude for ${agent.name}`);
+            text = await ClaudeService.generateAgentResponse(agent, state.agents, state.messages, state.agentOnlyMode);
+            score = await ClaudeService.scoreResponse(agent, text, state.messages);
+          } else {
+            throw error;
+          }
+        }
+
+        return { agentId: agent.id, text, score } as AgentResponse;
+      });
+
+      const followUpResponses = await Promise.all(followUpPromises);
+
+      // Check for interruption after generation
+      if (state.isInterrupted) {
+        console.log('Pipeline: Interrupted after response generation, aborting');
+        return;
+      }
+
+      // Find the best follow-up response
+      const bestFollowUp = followUpResponses.reduce((best, current) =>
+        current.score > best.score ? current : best
+      );
+
+      // Only prepare if the follow-up score is high enough
+      const MIN_SCORE_THRESHOLD = 6;
+
+      if (bestFollowUp.score < MIN_SCORE_THRESHOLD) {
+        console.log(`Pipeline: Best score ${bestFollowUp.score}/10 below threshold, skipping preparation`);
+        return;
+      }
+
+      const followUpAgent = state.agents.find(a => a.id === bestFollowUp.agentId)!;
+      console.log(`Pipeline: Best follow-up from ${followUpAgent.name} (score ${bestFollowUp.score}/10), generating TTS...`);
+
+      // Generate TTS for the best follow-up
+      const audioStream = await TTSService.synthesizeStream(bestFollowUp.text, followUpAgent.voiceId);
+
+      const audioChunks: Buffer[] = [];
+      for await (const chunk of audioStream) {
+        // Check for interruption during streaming
+        if (state.isInterrupted) {
+          console.log('Pipeline: Interrupted during TTS streaming, aborting');
+          return;
+        }
+        audioChunks.push(chunk);
+      }
+
+      const audioBuffer = Buffer.concat(audioChunks);
+
+      // Final interruption check before storing
+      if (state.isInterrupted) {
+        console.log('Pipeline: Interrupted after TTS generation, aborting');
+        return;
+      }
+
+      // Store prepared follow-up for immediate use
+      state.preparedFollowUp = {
+        agentId: followUpAgent.id,
+        agentName: followUpAgent.name,
+        text: bestFollowUp.text,
+        audioBuffer,
+        preparationStartTime: prepStart,
+      };
+
+      const prepTime = Date.now() - prepStart;
+      console.log(`✅ Pipeline: Follow-up prepared in ${prepTime}ms (ready for immediate playback)`);
+
+      // Check if audio is still playing (preparation finished before audio ended - SUCCESS!)
+      if (state.audioPlaybackResolver) {
+        console.log('⏰ Preparation finished BEFORE audio ended - pipelining successful! 🎯');
+      } else {
+        console.log('⏰ Preparation finished AFTER audio ended - audio was shorter than prep time');
+      }
+    } catch (error: any) {
+      console.error('Pipeline: Error preparing follow-up:', error.message);
+      // Don't throw - just log and let fallback handle it
+    }
+  }
+
+  /**
    * Helper method to continue multi-turn conversation after an agent speaks
    */
   private async continueConversation(conversationId: string, lastSpeakerId: string): Promise<void> {
@@ -373,6 +536,84 @@ export class ConversationOrchestrator extends EventEmitter {
     if (!state || state.isInterrupted) {
       return;
     }
+
+    // 🚀 PIPELINE HIT: Check if we already have a prepared follow-up ready
+    if (state.preparedFollowUp) {
+      const prepared = state.preparedFollowUp;
+      const latencySaved = Date.now() - prepared.preparationStartTime;
+      console.log(`⚡ Pipeline HIT! Using pre-generated response from ${prepared.agentName} (saved ${latencySaved}ms of latency)`);
+
+      // Find the agent
+      const followUpAgent = state.agents.find(a => a.id === prepared.agentId)!;
+
+      // Set speaking status
+      state.status = 'speaking';
+      state.currentSpeaker = followUpAgent.id;
+      this.emit('status:update', conversationId, 'speaking');
+      this.emit('agent:speaking', conversationId, followUpAgent.id, prepared.text);
+
+      // Add message to history
+      const followUpMessage = ConversationModel.addMessage({
+        conversationId,
+        speaker: followUpAgent.id,
+        text: prepared.text,
+      });
+
+      state.messages.push(followUpMessage);
+      this.emit('transcript:update', conversationId, followUpMessage);
+
+      // Send pre-generated audio immediately
+      const followUpEmitTime = Date.now();
+      const gapFromPreviousAudio = state.lastAudioEmitTime ? followUpEmitTime - state.lastAudioEmitTime : 0;
+      state.lastAudioEmitTime = followUpEmitTime;
+      this.emit('agent:audio', conversationId, prepared.audioBuffer);
+      console.log(`📤 Follow-up audio emitted for ${prepared.agentName} at T=${followUpEmitTime}`);
+      console.log(`⚡ Gap from previous audio: ${gapFromPreviousAudio}ms (target: <100ms)`);
+
+      // Clear the prepared follow-up
+      state.preparedFollowUp = undefined;
+
+      // Start preparing NEXT follow-up while this audio plays
+      const nextPreparationPromise = this.prepareFollowUp(conversationId, followUpAgent.id);
+
+      // Wait for audio playback
+      console.log('Waiting for pipelined audio playback to complete...');
+      await new Promise<void>((resolve) => {
+        state.audioPlaybackResolver = resolve;
+
+        const checkInterval = setInterval(() => {
+          if (state.isInterrupted) {
+            console.log('Pipelined audio interrupted by user');
+            clearInterval(checkInterval);
+            state.isInterrupted = false;
+            state.status = 'idle';
+            state.currentSpeaker = undefined;
+            state.audioPlaybackResolver = undefined;
+            this.emit('status:update', conversationId, 'idle');
+            resolve();
+          }
+        }, 100);
+
+        const originalResolver = state.audioPlaybackResolver;
+        state.audioPlaybackResolver = () => {
+          clearInterval(checkInterval);
+          if (originalResolver) {
+            originalResolver();
+          }
+          resolve();
+        };
+      });
+
+      // Wait for next preparation to complete
+      await nextPreparationPromise;
+
+      // Recursively check for more follow-ups
+      await this.continueConversation(conversationId, followUpAgent.id);
+      return;
+    }
+
+    // PIPELINE MISS: No prepared follow-up, use traditional generation
+    console.log('Pipeline MISS: Generating follow-up the traditional way');
 
     // Check if we've hit the maximum number of agent turns
     const turnsSinceUser = state.messages.slice().reverse().findIndex(m => m.speaker === 'user');
@@ -481,6 +722,9 @@ export class ConversationOrchestrator extends EventEmitter {
     // Send complete audio to frontend
     this.emit('agent:audio', conversationId, followUpAudioBuffer);
 
+    // Start preparing NEXT follow-up while this audio plays (pipeline for subsequent turns)
+    const nextFollowUpPreparation = this.prepareFollowUp(conversationId, followUpAgent.id);
+
     // Wait for frontend to signal audio playback completion
     console.log('Waiting for frontend follow-up audio playback to complete...');
 
@@ -513,6 +757,9 @@ export class ConversationOrchestrator extends EventEmitter {
       };
     });
 
+    // Wait for next preparation to complete
+    await nextFollowUpPreparation;
+
     // Recursively check for more follow-ups
     await this.continueConversation(conversationId, followUpAgent.id);
   }
@@ -526,6 +773,86 @@ export class ConversationOrchestrator extends EventEmitter {
     if (!state || state.isInterrupted) {
       return;
     }
+
+    // 🚀 PIPELINE HIT CHECK: Use prepared response if available
+    if (state.preparedFollowUp) {
+      const prepared = state.preparedFollowUp;
+      const latencySaved = Date.now() - prepared.preparationStartTime;
+      console.log(`⚡ Agent-only Pipeline HIT! Using pre-generated response from ${prepared.agentName} (saved ${latencySaved}ms)`);
+
+      const followUpAgent = state.agents.find(a => a.id === prepared.agentId)!;
+
+      // Set speaking status
+      state.status = 'speaking';
+      state.currentSpeaker = followUpAgent.id;
+      this.emit('status:update', conversationId, 'speaking');
+      this.emit('agent:speaking', conversationId, followUpAgent.id, prepared.text);
+
+      // Add message to history
+      const followUpMessage = ConversationModel.addMessage({
+        conversationId,
+        speaker: followUpAgent.id,
+        text: prepared.text,
+      });
+
+      state.messages.push(followUpMessage);
+      this.emit('transcript:update', conversationId, followUpMessage);
+
+      // Send pre-generated audio immediately
+      const audioEmitTime = Date.now();
+      const gapFromPreviousAudio = state.lastAudioEmitTime ? audioEmitTime - state.lastAudioEmitTime : 0;
+      state.lastAudioEmitTime = audioEmitTime;
+      this.emit('agent:audio', conversationId, prepared.audioBuffer);
+      console.log(`📤 Agent-only pipelined audio emitted at T=${audioEmitTime}, gap: ${gapFromPreviousAudio}ms (target: <100ms)`);
+
+      // Clear the prepared follow-up
+      state.preparedFollowUp = undefined;
+
+      // Start preparing NEXT follow-up while this audio plays
+      console.log('🚀 Agent-only Pipeline: Starting NEXT preparation BEFORE TTS...');
+      const nextPreparationPromise = this.prepareFollowUp(conversationId, followUpAgent.id);
+
+      // Wait for audio playback
+      console.log('Waiting for pipelined agent-only audio playback to complete...');
+      await new Promise<void>((resolve) => {
+        state.audioPlaybackResolver = resolve;
+
+        const checkInterval = setInterval(() => {
+          if (state.isInterrupted) {
+            console.log('Pipelined agent-only audio interrupted by user');
+            clearInterval(checkInterval);
+            state.isInterrupted = false;
+            state.status = 'idle';
+            state.currentSpeaker = undefined;
+            state.audioPlaybackResolver = undefined;
+            this.emit('status:update', conversationId, 'idle');
+            resolve();
+          }
+        }, 100);
+
+        const originalResolver = state.audioPlaybackResolver;
+        state.audioPlaybackResolver = () => {
+          clearInterval(checkInterval);
+          if (originalResolver) {
+            originalResolver();
+          }
+          resolve();
+        };
+      });
+
+      // Wait for next preparation to complete
+      if (nextPreparationPromise && !state.preparedFollowUp) {
+        console.log('⏳ Agent-only: Waiting for next preparation to complete...');
+        await nextPreparationPromise;
+      }
+
+      // Recursively check for more follow-ups
+      await this.continueAgentOnlyConversation(conversationId, followUpAgent.id);
+      return;
+    }
+
+    // PIPELINE MISS: No prepared follow-up, generate the traditional way
+    console.log('Agent-only Pipeline MISS: Generating follow-up traditionally');
 
     // In agent-only mode, always have another agent respond (no turn limit, no score threshold)
     // Generate responses from OTHER agents (exclude the one who just spoke)
@@ -597,6 +924,11 @@ export class ConversationOrchestrator extends EventEmitter {
     state.messages.push(followUpMessage);
     this.emit('transcript:update', conversationId, followUpMessage);
 
+    // 🚀 PIPELINE OPTIMIZATION: Start preparing NEXT agent's response before TTS
+    console.log('🚀 Agent-only Pipeline: Starting next preparation BEFORE TTS...');
+    state.preparedFollowUp = undefined;
+    const nextPreparationPromise = this.prepareFollowUp(conversationId, followUpAgent.id);
+
     // Generate audio using streaming for lower latency
     console.log('Streaming agent-only audio with real-time playback...');
     const audioStream = await TTSService.synthesizeStream(bestFollowUp.text, followUpAgent.voiceId);
@@ -619,7 +951,11 @@ export class ConversationOrchestrator extends EventEmitter {
     console.log(`Agent-only audio stream complete, total size: ${followUpAudioBuffer.length} bytes`);
 
     // Send complete audio to frontend
+    const audioEmitTime = Date.now();
+    const gapFromPreviousAudio = state.lastAudioEmitTime ? audioEmitTime - state.lastAudioEmitTime : 0;
+    state.lastAudioEmitTime = audioEmitTime;
     this.emit('agent:audio', conversationId, followUpAudioBuffer);
+    console.log(`📤 Agent-only audio emitted at T=${audioEmitTime}, gap: ${gapFromPreviousAudio}ms`);
 
     // Wait for frontend to signal audio playback completion
     console.log('Waiting for frontend agent-only audio playback to complete...');
@@ -652,6 +988,17 @@ export class ConversationOrchestrator extends EventEmitter {
         resolve();
       };
     });
+
+    // Wait for preparation to complete if needed
+    if (nextPreparationPromise && !state.preparedFollowUp) {
+      console.log('⏳ Agent-only: Waiting for preparation to complete...');
+      const waitStart = Date.now();
+      await nextPreparationPromise;
+      const waitTime = Date.now() - waitStart;
+      console.log(`✅ Agent-only: Preparation completed after ${waitTime}ms wait`);
+    } else if (state.preparedFollowUp) {
+      console.log('✅ Agent-only: Preparation already complete, proceeding immediately!');
+    }
 
     // Recursively continue the agent-only conversation
     await this.continueAgentOnlyConversation(conversationId, followUpAgent.id);
