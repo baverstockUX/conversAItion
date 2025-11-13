@@ -8,6 +8,7 @@ export interface CreateAgentData {
   persona: string;
   voiceId: string;
   avatarUrl: string;
+  usesExpletives?: boolean;
 }
 
 export interface UpdateAgentData {
@@ -16,6 +17,7 @@ export interface UpdateAgentData {
   persona?: string;
   voiceId?: string;
   avatarUrl?: string;
+  usesExpletives?: boolean;
 }
 
 export class AgentModel {
@@ -24,11 +26,11 @@ export class AgentModel {
     const now = new Date().toISOString();
 
     const stmt = db.prepare(`
-      INSERT INTO agents (id, name, role, persona, voice_id, avatar_url, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO agents (id, name, role, persona, voice_id, avatar_url, uses_expletives, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    stmt.run(id, data.name, data.role, data.persona, data.voiceId, data.avatarUrl, now, now);
+    stmt.run(id, data.name, data.role, data.persona, data.voiceId, data.avatarUrl, data.usesExpletives ? 1 : 0, now, now);
 
     return this.findById(id)!;
   }
@@ -36,7 +38,7 @@ export class AgentModel {
   static findById(id: string): Agent | undefined {
     const stmt = db.prepare(`
       SELECT id, name, role, persona, voice_id as voiceId, avatar_url as avatarUrl,
-             created_at as createdAt, updated_at as updatedAt
+             uses_expletives as usesExpletives, created_at as createdAt, updated_at as updatedAt
       FROM agents
       WHERE id = ?
     `);
@@ -46,6 +48,7 @@ export class AgentModel {
 
     return {
       ...row,
+      usesExpletives: Boolean(row.usesExpletives),
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
     };
@@ -54,7 +57,7 @@ export class AgentModel {
   static findAll(): Agent[] {
     const stmt = db.prepare(`
       SELECT id, name, role, persona, voice_id as voiceId, avatar_url as avatarUrl,
-             created_at as createdAt, updated_at as updatedAt
+             uses_expletives as usesExpletives, created_at as createdAt, updated_at as updatedAt
       FROM agents
       ORDER BY created_at DESC
     `);
@@ -62,6 +65,7 @@ export class AgentModel {
     const rows = stmt.all() as any[];
     return rows.map(row => ({
       ...row,
+      usesExpletives: Boolean(row.usesExpletives),
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
     }));
@@ -73,7 +77,7 @@ export class AgentModel {
     const placeholders = ids.map(() => '?').join(',');
     const stmt = db.prepare(`
       SELECT id, name, role, persona, voice_id as voiceId, avatar_url as avatarUrl,
-             created_at as createdAt, updated_at as updatedAt
+             uses_expletives as usesExpletives, created_at as createdAt, updated_at as updatedAt
       FROM agents
       WHERE id IN (${placeholders})
     `);
@@ -81,6 +85,7 @@ export class AgentModel {
     const rows = stmt.all(...ids) as any[];
     return rows.map(row => ({
       ...row,
+      usesExpletives: Boolean(row.usesExpletives),
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
     }));
@@ -109,6 +114,10 @@ export class AgentModel {
     if (data.avatarUrl !== undefined) {
       updates.push('avatar_url = ?');
       values.push(data.avatarUrl);
+    }
+    if (data.usesExpletives !== undefined) {
+      updates.push('uses_expletives = ?');
+      values.push(data.usesExpletives ? 1 : 0);
     }
 
     if (updates.length === 0) {

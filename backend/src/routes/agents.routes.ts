@@ -66,7 +66,7 @@ router.get('/:id', (req: Request, res: Response) => {
 // POST /api/agents - Create new agent
 router.post('/', (req: Request, res: Response) => {
   try {
-    const { name, role, persona, voiceId, avatarUrl } = req.body;
+    const { name, role, persona, voiceId, avatarUrl, usesExpletives } = req.body;
 
     // Validation
     if (!name || !role || !persona || !voiceId || !avatarUrl) {
@@ -81,6 +81,7 @@ router.post('/', (req: Request, res: Response) => {
       persona: persona.trim(),
       voiceId: voiceId.trim(),
       avatarUrl: avatarUrl.trim(),
+      usesExpletives: Boolean(usesExpletives),
     });
 
     res.status(201).json(agent);
@@ -93,14 +94,15 @@ router.post('/', (req: Request, res: Response) => {
 // PUT /api/agents/:id - Update agent
 router.put('/:id', (req: Request, res: Response) => {
   try {
-    const { name, role, persona, voiceId, avatarUrl } = req.body;
+    const { name, role, persona, voiceId, avatarUrl, usesExpletives } = req.body;
 
     const updateData: any = {};
-    if (name) updateData.name = name.trim();
-    if (role) updateData.role = role.trim();
-    if (persona) updateData.persona = persona.trim();
-    if (voiceId) updateData.voiceId = voiceId.trim();
-    if (avatarUrl) updateData.avatarUrl = avatarUrl.trim();
+    if (name !== undefined) updateData.name = name.trim();
+    if (role !== undefined) updateData.role = role.trim();
+    if (persona !== undefined) updateData.persona = persona.trim();
+    if (voiceId !== undefined) updateData.voiceId = voiceId.trim();
+    if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl.trim();
+    if (usesExpletives !== undefined) updateData.usesExpletives = Boolean(usesExpletives);
 
     const agent = AgentModel.update(req.params.id, updateData);
 

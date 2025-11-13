@@ -24,10 +24,23 @@ export function initializeDatabase() {
       persona TEXT NOT NULL,
       voice_id TEXT NOT NULL,
       avatar_url TEXT NOT NULL,
+      uses_expletives INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Migration: Add uses_expletives column if it doesn't exist
+  try {
+    const columns = db.prepare("PRAGMA table_info(agents)").all() as any[];
+    const hasExpletivesColumn = columns.some((col: any) => col.name === 'uses_expletives');
+    if (!hasExpletivesColumn) {
+      db.exec(`ALTER TABLE agents ADD COLUMN uses_expletives INTEGER DEFAULT 0`);
+      console.log('Added uses_expletives column to agents table');
+    }
+  } catch (error) {
+    console.error('Error checking/adding uses_expletives column:', error);
+  }
 
   // Conversations table
   db.exec(`

@@ -16,22 +16,20 @@ export class TTSService {
       throw new Error('ElevenLabs API key not configured');
     }
 
-    // Strip out action text between asterisks (e.g., *nods*, *smiles*)
-    const cleanedText = text.replace(/\*[^*]+\*/g, '').trim();
-
-    if (!cleanedText) {
-      throw new Error('No text to synthesize after removing actions');
+    if (!text || !text.trim()) {
+      throw new Error('No text to synthesize');
     }
 
     try {
       const response = await axios.post(
         `${ELEVENLABS_BASE_URL}/text-to-speech/${voiceId}`,
         {
-          text: cleanedText,
+          text: text,
           model_id: 'eleven_turbo_v2_5', // Fast, good quality, works with paid accounts
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.75,
+            speed: 1.2, // Slightly faster speech (1.0 is normal, 1.2 is 20% faster)
           },
         },
         {
@@ -132,6 +130,7 @@ export class TTSService {
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.75,
+            speed: 1.2, // Slightly faster speech (1.0 is normal, 1.2 is 20% faster)
           },
         },
         {

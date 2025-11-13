@@ -7,6 +7,7 @@ export interface Agent {
   persona: string;
   voiceId: string;
   avatarUrl: string;
+  usesExpletives: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
