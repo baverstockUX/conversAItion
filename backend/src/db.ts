@@ -1,0 +1,100 @@
+import Database from 'better-sqlite3';
+import { join } from 'path';
+import * as dotenv from 'dotenv';
+
+dotenv.config();
+
+const dbPath = process.env.DATABASE_PATH || join(__dirname, '../database/conversaition.db');
+
+export const db = new Database(dbPath);
+
+// Enable foreign keys
+db.pragma('foreign_keys = ON');
+
+// Initialize database schema
+export function initializeDatabase() {
+  console.log('Initializing database...');
+
+  // Agents table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agents (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL,
+      persona TEXT NOT NULL,
+      voice_id TEXT NOT NULL,
+      avatar_url TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Conversations table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS conversations (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      topic TEXT NOT NULL,
+      status TEXT CHECK(status IN ('active', 'completed')) DEFAULT 'active',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      completed_at DATETIME
+    )
+  `);
+
+  // Conversation agents (many-to-many)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS conversation_agents (
+      conversation_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      PRIMARY KEY (conversation_id, agent_id),
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+      FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Messages table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      speaker TEXT NOT NULL,
+      text TEXT NOT NULL,
+      audio_url TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Conversation analysis table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS conversation_analysis (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL UNIQUE,
+      summary TEXT NOT NULL,
+      strengths TEXT NOT NULL,
+      improvements TEXT NOT NULL,
+      key_moments TEXT NOT NULL,
+      feedback TEXT NOT NULL,
+      generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Create indexes for performance
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status);
+    CREATE INDEX IF NOT EXISTS idx_conversation_agents_agent ON conversation_agents(agent_id);
+  `);
+
+  console.log('Database initialized successfully');
+}
+
+// Run initialization if this file is executed directly
+if (require.main === module) {
+  initializeDatabase();
+  db.close();
+}
+
+export default db;
