@@ -114,18 +114,15 @@ export class TTSService {
       throw new Error('ElevenLabs API key not configured');
     }
 
-    // Strip out action text between asterisks (e.g., *nods*, *smiles*)
-    const cleanedText = text.replace(/\*[^*]+\*/g, '').trim();
-
-    if (!cleanedText) {
-      throw new Error('No text to synthesize after removing actions');
+    if (!text || !text.trim()) {
+      throw new Error('No text to synthesize');
     }
 
     try {
       const response = await axios.post(
         `${ELEVENLABS_BASE_URL}/text-to-speech/${voiceId}/stream`,
         {
-          text: cleanedText,
+          text: text,
           model_id: 'eleven_turbo_v2_5',
           voice_settings: {
             stability: 0.5,

@@ -73,7 +73,9 @@ export class LMStudioService {
     const otherAgents = allAgents.filter(a => a.id !== agent.id);
 
     // Build system message with agent persona
-    let systemContent = `You are ${agent.name}, ${agent.role}.
+    let systemContent = `===== NEW CONVERSATION (Previous conversations are irrelevant) =====
+
+You are ${agent.name}, ${agent.role}.
 
 ${agent.persona}
 

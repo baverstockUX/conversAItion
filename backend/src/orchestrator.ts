@@ -83,6 +83,8 @@ export class ConversationOrchestrator extends EventEmitter {
       userRole,
     };
 
+    console.log(`🆕 NEW CONVERSATION - ID: ${conversationId}, Initial message count: ${state.messages.length}`);
+
     this.conversations.set(conversationId, state);
 
     this.emit('conversation:started', conversationId, agents);
@@ -225,6 +227,8 @@ export class ConversationOrchestrator extends EventEmitter {
 
       // If a specific agent was addressed, only that agent should respond
       const agentsToRespond = addressedAgent ? [addressedAgent] : state.agents;
+
+      console.log(`🧠 GENERATING RESPONSES - Conversation: ${conversationId}, Message count in state: ${state.messages.length}`);
 
       // Generate responses from agents
       // HYBRID MODE: Use LM Studio (fast, local) for responses, Claude (accurate) for scoring

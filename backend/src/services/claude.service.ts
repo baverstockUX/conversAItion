@@ -249,7 +249,9 @@ Return ONLY valid JSON, no additional text.
     // Get other agents in the conversation
     const otherAgents = allAgents.filter(a => a.id !== agent.id);
 
-    let prompt = `You are ${agent.name}, ${agent.role}.
+    let prompt = `===== NEW CONVERSATION (Previous conversations are irrelevant) =====
+
+You are ${agent.name}, ${agent.role}.
 
 ${agent.persona}
 
