@@ -268,13 +268,34 @@ export class ConversationOrchestrator extends EventEmitter {
           }
 
           // Use Claude for accurate scoring (determines turn-taking)
-          score = await ClaudeService.scoreResponse(agent, text, state.messages);
+          try {
+            score = await ClaudeService.scoreResponse(agent, text, state.messages);
+          } catch (scoreError: any) {
+            // Handle AWS rate limiting gracefully
+            if (scoreError.name === 'ThrottlingException' || scoreError.$metadata?.httpStatusCode === 429) {
+              console.log(`⚠️  AWS rate limit hit for ${agent.name}, using random score (6-8)`);
+              score = 6 + Math.random() * 2; // Random score 6-8 to allow conversation to continue
+              this.emit('error', conversationId, 'AWS rate limit reached - using random scoring temporarily');
+            } else {
+              throw scoreError;
+            }
+          }
         } catch (error: any) {
           // Fallback to Claude for both response and scoring if LM Studio unavailable
           if (error.message.includes('LM Studio server not running') || error.message.includes('LM Studio inference failed')) {
             console.log(`LM Studio unavailable, falling back to Claude for ${agent.name}`);
-            text = await ClaudeService.generateAgentResponse(agent, state.agents, state.messages, state.agentOnlyMode, state.userName, state.userRole);
-            score = await ClaudeService.scoreResponse(agent, text, state.messages);
+            try {
+              text = await ClaudeService.generateAgentResponse(agent, state.agents, state.messages, state.agentOnlyMode, state.userName, state.userRole);
+              score = await ClaudeService.scoreResponse(agent, text, state.messages);
+            } catch (claudeError: any) {
+              // Handle rate limit even in fallback
+              if (claudeError.name === 'ThrottlingException' || claudeError.$metadata?.httpStatusCode === 429) {
+                console.log(`⚠️  AWS rate limit hit in fallback for ${agent.name}, conversation may be degraded`);
+                this.emit('error', conversationId, 'AWS rate limit reached - please wait 1-2 minutes');
+                throw new Error('AWS rate limit exceeded - please wait before continuing');
+              }
+              throw claudeError;
+            }
           } else {
             throw error;
           }
@@ -340,11 +361,14 @@ export class ConversationOrchestrator extends EventEmitter {
 
       // Buffer chunks as they arrive from ElevenLabs (fast local operation)
       const chunks: Buffer[] = [];
+      let chunkCount = 0;
       for await (const chunk of audioStream) {
+        chunkCount++;
+        console.log(`[AUDIO CHUNK ${chunkCount}] Received ${chunk.length} bytes`);
         chunks.push(chunk);
       }
       const audioBuffer = Buffer.concat(chunks);
-      console.log(`Audio stream complete, total size: ${audioBuffer.length} bytes`);
+      console.log(`Audio stream complete, ${chunkCount} chunks, total size: ${audioBuffer.length} bytes`);
 
       // Check if interrupted during TTS
       if (state.isInterrupted) {
@@ -475,7 +499,17 @@ export class ConversationOrchestrator extends EventEmitter {
 
         try {
           text = await LMStudioService.generateAgentResponse(agent, state.agents, state.messages, state.agentOnlyMode);
-          score = await ClaudeService.scoreResponse(agent, text, state.messages);
+          try {
+            score = await ClaudeService.scoreResponse(agent, text, state.messages);
+          } catch (scoreError: any) {
+            // Handle AWS rate limiting in pipeline
+            if (scoreError.name === 'ThrottlingException' || scoreError.$metadata?.httpStatusCode === 429) {
+              console.log(`⚠️  Pipeline: AWS rate limit hit for ${agent.name}, using random score`);
+              score = 6 + Math.random() * 2; // Random score 6-8
+            } else {
+              throw scoreError;
+            }
+          }
         } catch (error: any) {
           if (error.message.includes('LM Studio server not running')) {
             console.log(`Pipeline: LM Studio unavailable, falling back to Claude for ${agent.name}`);
