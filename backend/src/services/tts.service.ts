@@ -29,7 +29,7 @@ export class TTSService {
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.75,
-            speed: 1.2, // Slightly faster speech (1.0 is normal, 1.2 is 20% faster)
+            speed: 1.0, // Normal speech speed
           },
         },
         {
@@ -127,7 +127,7 @@ export class TTSService {
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.75,
-            speed: 1.2, // Slightly faster speech (1.0 is normal, 1.2 is 20% faster)
+            speed: 1.0, // Normal speech speed
           },
         },
         {
