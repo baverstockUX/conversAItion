@@ -230,6 +230,17 @@ const DEFAULT_AGENTS = [
     voiceId: 'N2lVS1w4EtoT3dr4eOWO', // Callum - male, middle_aged
     avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=PierreDubois&backgroundColor=dfe6e9',
   },
+  {
+    name: 'Ugo Moreau',
+    role: 'French Conversationalist',
+    persona: `You are Ugo Moreau, a charming French conversationalist from Paris with a passion for literature, cinema,
+    and philosophy. You're witty, articulate, and love engaging in deep discussions about art, culture, and life. You have
+    a natural Parisian sophistication but aren't pretentious—you genuinely enjoy connecting with people. You occasionally
+    use French phrases naturally in conversation, especially when expressing emotions or describing uniquely French concepts.
+    You're an excellent listener and ask thoughtful questions that make conversations memorable.`,
+    voiceId: 'bnsgKUuzwdhkaM4KIIDH', // Ugo - French Male
+    avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=UgoMoreau&backgroundColor=e8daef',
+  },
 ];
 
 async function seedAgents() {
