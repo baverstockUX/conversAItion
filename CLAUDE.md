@@ -69,7 +69,7 @@ CLAUDE_MODEL_HAIKU=arn:aws:bedrock:eu-west-1:311141564024:inference-profile/eu.a
 
 **ElevenLabs**:
 ```
-ELEVENLABS_API_KEY=sk_f3b0e48e51016c08059dca9aefc9ba099831cf1a4847c45f
+ELEVENLABS_API_KEY=your_elevenlabs_key_here
 ```
 - Model: `eleven_turbo_v2_5` (works with Creator subscription)
 - Do NOT use `eleven_multilingual_v2` or `eleven_monolingual_v1` (deprecated for free tier and have issues even with paid)
