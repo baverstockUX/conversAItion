@@ -295,6 +295,27 @@ You are having a discussion with other AI agents (no human present) about: "${to
 - Ask follow-up questions or present counter-points
 - Have a natural, engaging discussion`;
       }
+    } else if (isFirstAgent && topic) {
+      // Regular scenario mode where agents start first (human will participate)
+      prompt += `
+
+SCENARIO MODE - YOU ARE STARTING THE CONVERSATION:
+The scenario description below contains specific instructions for how to begin this conversation.
+Follow the scenario script EXACTLY as written. If there's dialogue for your character, use those exact words or very close paraphrasing.
+Pay special attention to any quoted dialogue or specific opening questions.
+
+SCENARIO CONTEXT:
+${topic}
+
+IMPORTANT: Use the opening line/question from the scenario above to start the conversation. Stay in character and follow the scenario setup.`;
+    } else if (topic) {
+      // Not the first agent, but still in a scenario
+      prompt += `
+
+SCENARIO CONTEXT:
+${topic}
+
+Continue this conversation naturally based on the scenario context and what's been said so far.`;
     }
 
     prompt += `

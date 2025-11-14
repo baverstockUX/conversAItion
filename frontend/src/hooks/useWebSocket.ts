@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import type { Message, Agent } from '../types';
 
 const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const WS_AUTH_TOKEN = import.meta.env.VITE_WS_AUTH_TOKEN;
 
 export interface WebSocketStatus {
   connected: boolean;
@@ -16,13 +17,24 @@ export function useWebSocket() {
     connected: false,
     conversationStatus: 'idle',
   });
+  // Don't persist conversation ID - it should only exist during active conversation
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const conversationIdRef = useRef<string | null>(null); // Track current conversation for cleanup
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // Keep ref in sync with state
   useEffect(() => {
-    // Initialize socket connection
-    const socket = io(SOCKET_URL);
+    conversationIdRef.current = currentConversationId;
+  }, [currentConversationId]);
+
+  useEffect(() => {
+    // Initialize socket connection with authentication
+    const socket = io(SOCKET_URL, {
+      auth: {
+        token: WS_AUTH_TOKEN,
+      },
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => {
@@ -91,6 +103,7 @@ export function useWebSocket() {
     socket.on('conversation:ended', () => {
       console.log('Conversation ended');
       setStatus((prev) => ({ ...prev, conversationStatus: 'idle', currentSpeaker: undefined }));
+      setCurrentConversationId(null);
     });
 
     socket.on('conversation:interrupted', () => {
@@ -99,6 +112,11 @@ export function useWebSocket() {
     });
 
     return () => {
+      // Clean up: end any active conversation before disconnecting
+      if (conversationIdRef.current) {
+        console.log('Component unmounting, ending conversation:', conversationIdRef.current);
+        socket.emit('conversation:end', { conversationId: conversationIdRef.current });
+      }
       socket.disconnect();
     };
   }, []);

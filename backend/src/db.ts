@@ -93,12 +93,55 @@ export function initializeDatabase() {
     )
   `);
 
+  // Scenarios table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scenarios (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      category TEXT NOT NULL,
+      topic TEXT NOT NULL,
+      agents_start_first INTEGER DEFAULT 0,
+      difficulty_level TEXT,
+      estimated_duration INTEGER,
+      recommended_for TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Migration: Add agents_start_first column if it doesn't exist
+  try {
+    const columns = db.prepare("PRAGMA table_info(scenarios)").all() as any[];
+    const hasAgentsStartFirstColumn = columns.some((col: any) => col.name === 'agents_start_first');
+    if (!hasAgentsStartFirstColumn) {
+      db.exec(`ALTER TABLE scenarios ADD COLUMN agents_start_first INTEGER DEFAULT 0`);
+      console.log('Added agents_start_first column to scenarios table');
+    }
+  } catch (error) {
+    console.error('Error checking/adding agents_start_first column:', error);
+  }
+
+  // Scenario agents (many-to-many)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scenario_agents (
+      scenario_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      display_order INTEGER DEFAULT 0,
+      PRIMARY KEY (scenario_id, agent_id),
+      FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE,
+      FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+    )
+  `);
+
   // Create indexes for performance
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
     CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status);
     CREATE INDEX IF NOT EXISTS idx_conversation_agents_agent ON conversation_agents(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_scenarios_category ON scenarios(category);
+    CREATE INDEX IF NOT EXISTS idx_scenario_agents_agent ON scenario_agents(agent_id);
   `);
 
   console.log('Database initialized successfully');

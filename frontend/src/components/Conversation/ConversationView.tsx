@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useAudioRecorder } from '../../hooks/useAudioRecorder';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
@@ -7,6 +7,7 @@ import { useAgents } from '../../hooks/useAgents';
 
 export default function ConversationView() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { agents } = useAgents();
   const {
     status,
@@ -30,6 +31,39 @@ export default function ConversationView() {
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [agentsStartFirst, setAgentsStartFirst] = useState(false);
   const [agentOnlyMode, setAgentOnlyMode] = useState(false);
+  const [isLoadingScenario, setIsLoadingScenario] = useState(false);
+  const [scenarioTitle, setScenarioTitle] = useState<string | null>(null);
+
+  // Auto-detect if conversation was started externally (e.g., from a scenario)
+  useEffect(() => {
+    const state = location.state as { fromScenario?: boolean; scenarioTitle?: string; agentIds?: string[]; topic?: string } | null;
+
+    if (state?.fromScenario && state.agentIds && state.topic) {
+      console.log('Conversation started from scenario, auto-populating agents and topic');
+      setSelectedAgentIds(state.agentIds);
+      setTopic(state.topic);
+      setScenarioTitle(state.scenarioTitle || null);
+      setHasStarted(true);
+      setIsLoadingScenario(true); // Show loading until conversation starts
+
+      // Clear the navigation state so it doesn't persist on refresh
+      navigate(location.pathname, { replace: true, state: null });
+    } else if (currentConversationId && !hasStarted) {
+      console.log('Conversation already started externally, skipping setup');
+      setHasStarted(true);
+    }
+  }, [currentConversationId, hasStarted, location, navigate]);
+
+  // Clear loading state when conversation is confirmed started, agents speak, or messages appear
+  useEffect(() => {
+    if (isLoadingScenario) {
+      // Hide loading if conversation started, agents are speaking, or any non-system messages exist
+      const hasNonSystemMessages = messages.some(m => m.speaker !== 'system');
+      if (currentConversationId || status.conversationStatus === 'speaking' || hasNonSystemMessages) {
+        setIsLoadingScenario(false);
+      }
+    }
+  }, [currentConversationId, status.conversationStatus, messages, isLoadingScenario]);
 
   // Keyboard shortcut: Hold SPACE to record (disabled in agent-only mode)
   useEffect(() => {
@@ -153,6 +187,24 @@ export default function ConversationView() {
             <button onClick={clearError} className="text-sm underline hover:no-underline">
               Dismiss
             </button>
+          </div>
+        )}
+
+        {isLoadingScenario && (
+          <div className="glass rounded-2xl p-12 border border-indigo-500/30 mb-6">
+            <div className="flex flex-col items-center justify-center text-center space-y-6">
+              <div className="relative">
+                <div className="w-20 h-20 border-4 border-indigo-500/20 rounded-full"></div>
+                <div className="absolute top-0 left-0 w-20 h-20 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+              </div>
+              <div>
+                {scenarioTitle && (
+                  <h2 className="text-2xl font-bold text-white mb-2">{scenarioTitle}</h2>
+                )}
+                <p className="text-lg text-indigo-300 font-medium mb-2">Preparing your conversation...</p>
+                <p className="text-sm text-gray-400">The agents are getting ready to speak with you</p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -288,6 +340,20 @@ export default function ConversationView() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Agents Panel */}
           <div className="glass rounded-2xl p-6 border border-white/10">
+            {scenarioTitle && (
+              <div className="mb-6 pb-6 border-b border-white/10">
+                <div className="flex items-center gap-2 text-indigo-400 mb-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                  </svg>
+                  <span className="text-sm font-medium">Scenario</span>
+                </div>
+                <h3 className="text-lg font-bold text-white mb-2">{scenarioTitle}</h3>
+                {topic && (
+                  <p className="text-sm text-gray-400 line-clamp-3">{topic}</p>
+                )}
+              </div>
+            )}
             <h2 className="text-xl font-bold text-white mb-6">Active Agents</h2>
             <div className="space-y-3">
               {selectedAgents.map((agent) => (

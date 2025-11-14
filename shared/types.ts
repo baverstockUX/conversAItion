@@ -89,3 +89,22 @@ export interface ScoringCriteria {
   consistency: number; // 0-3
   engagement: number; // 0-3
 }
+
+export interface Scenario {
+  id: string;
+  title: string;
+  description: string;
+  category: 'interview' | 'sales' | 'medical' | 'executive' | 'education' | 'other';
+  topic: string;
+  agentIds: string[];
+  agentsStartFirst?: boolean; // If true, agents kick off the conversation
+  difficultyLevel?: 'beginner' | 'intermediate' | 'advanced';
+  estimatedDuration?: number; // in minutes
+  recommendedFor?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ScenarioWithAgents extends Scenario {
+  agents: Agent[];
+}

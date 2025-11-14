@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Agent, Conversation, ElevenLabsVoice, ConversationAnalysis } from '../types';
+import type { Agent, Conversation, ElevenLabsVoice, ConversationAnalysis, ScenarioWithAgents, Scenario } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -43,6 +43,17 @@ export const conversationsApi = {
 
 export const voicesApi = {
   getAll: () => api.get<ElevenLabsVoice[]>('/api/voices'),
+};
+
+export const scenariosApi = {
+  getAll: () => api.get<ScenarioWithAgents[]>('/api/scenarios'),
+  getById: (id: string) => api.get<ScenarioWithAgents>(`/api/scenarios/${id}`),
+  getByCategory: (category: string) => api.get<ScenarioWithAgents[]>(`/api/scenarios/category/${category}`),
+  create: (data: Omit<Scenario, 'id' | 'createdAt' | 'updatedAt'>) =>
+    api.post<ScenarioWithAgents>('/api/scenarios', data),
+  update: (id: string, data: Partial<Omit<Scenario, 'id' | 'createdAt' | 'updatedAt'>>) =>
+    api.put<ScenarioWithAgents>(`/api/scenarios/${id}`, data),
+  delete: (id: string) => api.delete(`/api/scenarios/${id}`),
 };
 
 export default api;

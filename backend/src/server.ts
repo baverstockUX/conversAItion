@@ -10,6 +10,7 @@ import { initializeDatabase } from './db';
 import agentsRoutes from './routes/agents.routes';
 import conversationsRoutes from './routes/conversations.routes';
 import voicesRoutes from './routes/voices.routes';
+import scenariosRoutes from './routes/scenarios.routes';
 
 // Import orchestrator
 import { orchestrator } from './orchestrator';
@@ -58,6 +59,33 @@ const io = new SocketIOServer(httpServer, {
   maxHttpBufferSize: 10e6, // 10 MB for audio files
 });
 
+// Socket.io authentication middleware
+const WS_AUTH_SECRET = process.env.WS_AUTH_SECRET;
+
+if (!WS_AUTH_SECRET) {
+  console.error('❌ WS_AUTH_SECRET not set in environment variables');
+  process.exit(1);
+}
+
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+
+  if (!token) {
+    console.warn(`⚠️  Connection rejected: No auth token provided (${socket.id})`);
+    return next(new Error('Authentication required'));
+  }
+
+  if (token !== WS_AUTH_SECRET) {
+    console.warn(`⚠️  Connection rejected: Invalid auth token (${socket.id})`);
+    return next(new Error('Invalid authentication token'));
+  }
+
+  // Token is valid, allow connection
+  next();
+});
+
+console.log('🔒 WebSocket authentication enabled');
+
 // Middleware
 app.use(cors(corsOptions));
 app.use(express.json());
@@ -75,6 +103,10 @@ app.get('/health', (req, res) => {
 app.use('/api/agents', agentsRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/voices', voicesRoutes);
+app.use('/api/scenarios', scenariosRoutes);
+
+// Track which socket is in which conversation
+const socketConversations = new Map<string, string>(); // socketId -> conversationId
 
 // Socket.io event handlers
 io.on('connection', (socket: Socket) => {
@@ -85,6 +117,13 @@ io.on('connection', (socket: Socket) => {
     try {
       const { agentIds, topic, agentsStartFirst = false, agentOnlyMode = false, userName, userRole, title } = data;
 
+      // End any existing conversation for this socket
+      const existingConversationId = socketConversations.get(socket.id);
+      if (existingConversationId) {
+        console.log(`Ending existing conversation ${existingConversationId} for socket ${socket.id}`);
+        await orchestrator.endConversation(existingConversationId);
+      }
+
       // Create conversation in database
       const conversation = ConversationModel.create({
         title: title || `Conversation about ${topic}`,
@@ -92,16 +131,19 @@ io.on('connection', (socket: Socket) => {
         agentIds,
       });
 
+      // Map this socket to this conversation
+      socketConversations.set(socket.id, conversation.id);
+
       // Start orchestrator with user context
       await orchestrator.startConversation(conversation.id, agentIds, topic, agentsStartFirst, agentOnlyMode, userName, userRole);
 
-      // Send success response
+      // Send success response only to this socket
       socket.emit('conversation:started', {
         conversationId: conversation.id,
         agents: conversation.agentIds,
       });
 
-      console.log(`Conversation started: ${conversation.id}${agentsStartFirst ? ' (agents will start)' : ''}${userName ? ` with ${userName}${userRole ? ` (${userRole})` : ''}` : ''}`);
+      console.log(`Conversation started: ${conversation.id} for socket ${socket.id}${agentsStartFirst ? ' (agents will start)' : ''}${userName ? ` with ${userName}${userRole ? ` (${userRole})` : ''}` : ''}`);
     } catch (error: any) {
       console.error('Error starting conversation:', error);
       socket.emit('error', { message: error.message });
@@ -148,6 +190,7 @@ io.on('connection', (socket: Socket) => {
     try {
       const { conversationId } = data;
       await orchestrator.endConversation(conversationId);
+      socketConversations.delete(socket.id);
       socket.emit('conversation:ended', { conversationId });
       console.log(`Conversation ended: ${conversationId}`);
     } catch (error: any) {
@@ -156,43 +199,89 @@ io.on('connection', (socket: Socket) => {
     }
   });
 
-  // Handle disconnect
-  socket.on('disconnect', () => {
+  // Handle disconnect - clean up any active conversations
+  socket.on('disconnect', async () => {
     console.log(`Client disconnected: ${socket.id}`);
+
+    const conversationId = socketConversations.get(socket.id);
+    if (conversationId) {
+      console.log(`Cleaning up conversation ${conversationId} for disconnected socket ${socket.id}`);
+      try {
+        await orchestrator.endConversation(conversationId);
+      } catch (error) {
+        console.error(`Error cleaning up conversation ${conversationId}:`, error);
+      }
+      socketConversations.delete(socket.id);
+    }
   });
 });
 
-// Set up orchestrator event forwarding to socket clients
+// Helper function to find socket for a conversation
+function getSocketForConversation(conversationId: string): Socket | null {
+  for (const [socketId, convId] of socketConversations.entries()) {
+    if (convId === conversationId) {
+      const socket = io.sockets.sockets.get(socketId);
+      return socket || null;
+    }
+  }
+  return null;
+}
+
+// Set up orchestrator event forwarding - send only to the socket owning the conversation
 orchestrator.on('status:update', (conversationId: string, status: string) => {
-  io.emit('status:update', { conversationId, status });
+  const socket = getSocketForConversation(conversationId);
+  if (socket) {
+    socket.emit('status:update', { status });
+  }
 });
 
 orchestrator.on('agent:speaking', (conversationId: string, agentId: string, text: string) => {
-  io.emit('agent:speaking', { conversationId, agentId, text });
+  const socket = getSocketForConversation(conversationId);
+  if (socket) {
+    socket.emit('agent:speaking', { agentId, text });
+  }
 });
 
 orchestrator.on('agent:audio', (conversationId: string, audio: Buffer) => {
-  io.emit('agent:audio', { conversationId, audio: audio.buffer });
+  const socket = getSocketForConversation(conversationId);
+  if (socket) {
+    socket.emit('agent:audio', { audio: audio.buffer });
+  }
 });
 
 orchestrator.on('agent:audio:chunk', (conversationId: string, chunk: Buffer, isFirstChunk: boolean) => {
-  io.emit('agent:audio:chunk', { conversationId, chunk: chunk.buffer, isFirstChunk });
+  const socket = getSocketForConversation(conversationId);
+  if (socket) {
+    socket.emit('agent:audio:chunk', { chunk: chunk.buffer, isFirstChunk });
+  }
 });
 
 orchestrator.on('agent:audio:end', (conversationId: string) => {
-  io.emit('agent:audio:end', { conversationId });
+  const socket = getSocketForConversation(conversationId);
+  if (socket) {
+    socket.emit('agent:audio:end', {});
+  }
 });
 
 orchestrator.on('transcript:update', (conversationId: string, message: any) => {
-  io.emit('transcript:update', { conversationId, message });
+  const socket = getSocketForConversation(conversationId);
+  if (socket) {
+    socket.emit('transcript:update', { message });
+  }
 });
 
 orchestrator.on('error', (conversationId: string, message: string) => {
-  io.emit('error', { conversationId, message });
+  const socket = getSocketForConversation(conversationId);
+  if (socket) {
+    socket.emit('error', { message });
+  }
 });
 
 orchestrator.on('conversation:interrupted', (conversationId: string) => {
-  io.emit('conversation:interrupted', { conversationId });
+  const socket = getSocketForConversation(conversationId);
+  if (socket) {
+    socket.emit('conversation:interrupted', {});
+  }
 });
 
 // Error handling middleware

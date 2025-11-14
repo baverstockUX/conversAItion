@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "db:init": "tsx src/db.ts",
     "seed:agents": "tsx src/seed-agents.ts",
+    "seed:scenarios": "tsx src/seed-scenarios.ts",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit"
   },

@@ -230,9 +230,28 @@ export class ConversationOrchestrator extends EventEmitter {
 
       console.log(`🧠 GENERATING RESPONSES - Conversation: ${conversationId}, Message count in state: ${state.messages.length}`);
 
+      // Helper: Validate text output quality
+      const isValidOutput = (text: string): boolean => {
+        // Check for excessive question marks or special characters (signs of corrupted output)
+        const questionMarkRatio = (text.match(/\?/g) || []).length / text.length;
+        const specialCharRatio = (text.match(/[^\w\s.,!?'-]/g) || []).length / text.length;
+
+        // If >15% question marks or >20% special chars, it's probably corrupted
+        if (questionMarkRatio > 0.15 || specialCharRatio > 0.20) {
+          return false;
+        }
+
+        // Check for gibberish patterns (lots of dots, repeated characters)
+        if (text.match(/\.{3,}/g) || text.match(/…{2,}/g) || text.match(/\*{3,}/g)) {
+          return false;
+        }
+
+        return true;
+      };
+
       // Generate responses from agents
       // HYBRID MODE: Use LM Studio (fast, local) for responses, Claude (accurate) for scoring
-      // Falls back to Claude-only if LM Studio is unavailable
+      // Falls back to Claude-only if LM Studio is unavailable or produces garbage
       const responsePromises = agentsToRespond.map(async (agent) => {
         let text: string;
         let score: number;
@@ -240,11 +259,19 @@ export class ConversationOrchestrator extends EventEmitter {
         try {
           // Try LM Studio for fast local inference
           text = await LMStudioService.generateAgentResponse(agent, state.agents, state.messages, state.agentOnlyMode, state.userName, state.userRole);
+
+          // Validate output quality - fall back to Claude if corrupted
+          if (!isValidOutput(text)) {
+            console.log(`⚠️  LM Studio generated corrupted output for ${agent.name}, falling back to Claude`);
+            console.log(`Corrupted text preview: ${text.substring(0, 100)}...`);
+            text = await ClaudeService.generateAgentResponse(agent, state.agents, state.messages, state.agentOnlyMode, state.userName, state.userRole);
+          }
+
           // Use Claude for accurate scoring (determines turn-taking)
           score = await ClaudeService.scoreResponse(agent, text, state.messages);
         } catch (error: any) {
           // Fallback to Claude for both response and scoring if LM Studio unavailable
-          if (error.message.includes('LM Studio server not running')) {
+          if (error.message.includes('LM Studio server not running') || error.message.includes('LM Studio inference failed')) {
             console.log(`LM Studio unavailable, falling back to Claude for ${agent.name}`);
             text = await ClaudeService.generateAgentResponse(agent, state.agents, state.messages, state.agentOnlyMode, state.userName, state.userRole);
             score = await ClaudeService.scoreResponse(agent, text, state.messages);

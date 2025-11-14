@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import Home from './components/Home';
 import AgentCreator from './components/AgentCreator/AgentCreator';
+import Scenarios from './components/Scenarios/Scenarios';
 import ConversationView from './components/Conversation/ConversationView';
 import AnalysisView from './components/Analysis/AnalysisView';
 
@@ -25,6 +26,12 @@ function App() {
                   Home
                 </Link>
                 <Link
+                  to="/scenarios"
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10 transition-all"
+                >
+                  Scenarios
+                </Link>
+                <Link
                   to="/agents"
                   className="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10 transition-all"
                 >
@@ -45,6 +52,7 @@ function App() {
         <main>
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/scenarios" element={<Scenarios />} />
             <Route path="/agents" element={<AgentCreator />} />
             <Route path="/conversation" element={<ConversationView />} />
             <Route path="/analysis/:id" element={<AnalysisView />} />

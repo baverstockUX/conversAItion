@@ -7,4 +7,6 @@ export type {
   ElevenLabsVoice,
   ConversationStartRequest,
   WebSocketEvents,
+  Scenario,
+  ScenarioWithAgents,
 } from '../../../shared/types';
