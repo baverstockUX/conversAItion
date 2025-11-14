@@ -36,15 +36,30 @@ export default function ConversationView() {
 
   // Auto-detect if conversation was started externally (e.g., from a scenario)
   useEffect(() => {
-    const state = location.state as { fromScenario?: boolean; scenarioTitle?: string; agentIds?: string[]; topic?: string } | null;
+    const state = location.state as { fromScenario?: boolean; scenarioTitle?: string; agentIds?: string[]; topic?: string; agentsStartFirst?: boolean } | null;
 
     if (state?.fromScenario && state.agentIds && state.topic) {
       console.log('Conversation started from scenario, auto-populating agents and topic');
+      console.log('Scenario agentsStartFirst:', state.agentsStartFirst);
+
+      // Set UI state
       setSelectedAgentIds(state.agentIds);
       setTopic(state.topic);
       setScenarioTitle(state.scenarioTitle || null);
+      setAgentsStartFirst(state.agentsStartFirst || false);
       setHasStarted(true);
       setIsLoadingScenario(true); // Show loading until conversation starts
+
+      // Actually start the conversation via WebSocket
+      startConversation(
+        state.agentIds,
+        state.topic,
+        state.agentsStartFirst || false,
+        false, // agentOnlyMode
+        undefined, // userName
+        undefined, // userRole
+        state.scenarioTitle // title
+      );
 
       // Clear the navigation state so it doesn't persist on refresh
       navigate(location.pathname, { replace: true, state: null });
@@ -52,7 +67,7 @@ export default function ConversationView() {
       console.log('Conversation already started externally, skipping setup');
       setHasStarted(true);
     }
-  }, [currentConversationId, hasStarted, location, navigate]);
+  }, [currentConversationId, hasStarted, location, navigate, startConversation]);
 
   // Clear loading state when conversation is confirmed started, agents speak, or messages appear
   useEffect(() => {

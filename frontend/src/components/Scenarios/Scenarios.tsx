@@ -1,14 +1,12 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScenarios } from '../../hooks/useScenarios';
-import { useWebSocket } from '../../hooks/useWebSocket';
 import ScenarioCreator from './ScenarioCreator';
 import type { ScenarioWithAgents } from '../../types';
 
 export default function Scenarios() {
   const navigate = useNavigate();
   const { scenarios, loading, deleteScenario } = useScenarios();
-  const { startConversation } = useWebSocket();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showCreator, setShowCreator] = useState(false);
@@ -27,24 +25,15 @@ export default function Scenarios() {
   }, [scenarios]);
 
   const handleStartScenario = (scenario: ScenarioWithAgents) => {
-    // Start conversation directly with scenario's agents and topic
-    startConversation(
-      scenario.agentIds,
-      scenario.topic,
-      scenario.agentsStartFirst || false,
-      false, // agentOnlyMode
-      undefined, // userName
-      undefined, // userRole
-      scenario.title // Use scenario title as conversation title
-    );
-
     // Navigate to conversation page with scenario state
+    // ConversationView will start the conversation after mounting
     navigate('/conversation', {
       state: {
         fromScenario: true,
         scenarioTitle: scenario.title,
         agentIds: scenario.agentIds,
         topic: scenario.topic,
+        agentsStartFirst: scenario.agentsStartFirst || false,
       }
     });
   };

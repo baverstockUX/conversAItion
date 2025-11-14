@@ -118,6 +118,8 @@ export class TTSService {
       throw new Error('No text to synthesize');
     }
 
+    console.log(`[TTS] Synthesizing text (length: ${text.length}): "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+
     try {
       const response = await axios.post(
         `${ELEVENLABS_BASE_URL}/text-to-speech/${voiceId}/stream`,
