@@ -276,9 +276,56 @@ See `project-plan.md` for complete roadmap, including:
 - Team workspaces
 - API access
 
+## Production Status & Known Issues
+
+⚠️ **IMPORTANT: This application is currently NOT PRODUCTION READY**
+
+A comprehensive architectural code review (2025-11-14) identified critical issues that must be addressed before production deployment:
+
+### Critical Issues (9)
+- Zero test coverage (no automated tests)
+- Security vulnerabilities (exposed API keys, weak auth, no input validation)
+- No database backups or disaster recovery
+- Missing production logging and error monitoring
+- Single-server architecture (cannot scale)
+- Memory leaks in conversation state
+- No CI/CD pipeline
+
+### Overall Grade: B- (70/100)
+- **Strengths:** Innovative architecture, excellent performance optimizations
+- **Weaknesses:** Security, testing, scalability, observability gaps
+
+### Timeline to Production Ready
+- **Minimum viable:** 4-5 weeks
+- **Production ready:** 8-10 weeks
+- **Enterprise grade:** 12-14 weeks
+
+**For complete details, see `critical-fixes.md`**
+
+### Development vs Production
+
+This is currently a **development prototype** demonstrating:
+- ✅ Innovative multi-agent AI architecture
+- ✅ Real-time voice conversation capabilities
+- ✅ Natural turn-taking algorithms
+- ✅ Clean, maintainable codebase
+
+**Not yet suitable for:**
+- ❌ Production deployment
+- ❌ Handling real user data
+- ❌ Scaling beyond demo usage
+- ❌ Enterprise security requirements
+
 ## Contributing
 
 This is currently an MVP. Contributions welcome after initial release.
+
+**Priority areas for contribution:**
+1. Test suite implementation (Jest/Vitest)
+2. Security hardening (JWT auth, input validation)
+3. Production logging and monitoring
+4. Docker containerization and CI/CD
+5. Database migration system
 
 ## License
 
@@ -286,12 +333,13 @@ MIT
 
 ## Support
 
-- **Documentation**: See `project-plan.md` for detailed technical docs
-- **Issues**: GitHub Issues (to be set up)
+- **Documentation**: See `project-plan.md` and `CLAUDE.md` for technical docs
+- **Code Review**: See `critical-fixes.md` for production readiness assessment
+- **Issues**: GitHub Issues
 - **Questions**: Contact project maintainer
 
 ---
 
-**Status**: Backend complete ✅ | Frontend in progress 🚧
+**Status**: Development MVP ✅ | Production Ready 🚧 (8-10 weeks)
 
 Built with ❤️ using Claude Sonnet 4.5

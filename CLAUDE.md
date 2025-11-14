@@ -599,3 +599,53 @@ Run `npm run seed:agents` in the backend directory to create these pre-configure
 - Conversation history and replay
 - Voice activity detection for automatic hands-free turn-taking
 - Local-only mode option (remove Claude dependency completely)
+
+## Code Review & Production Readiness
+
+**Date:** 2025-11-14
+**Status:** NOT PRODUCTION READY (See `critical-fixes.md`)
+
+A comprehensive architectural code review was conducted with the following findings:
+
+### Overall Assessment
+- **Grade:** B- (70/100)
+- **Issues Found:** 68 total (9 Critical, 22 High, 26 Medium, 11 Low)
+- **Test Coverage:** 0% (CRITICAL - no tests exist)
+
+### Critical Issues Requiring Immediate Attention
+
+1. **Zero test coverage** - No automated tests
+2. **Hard-coded API keys exposed** - .env files tracked in git
+3. **Weak WebSocket authentication** - Shared secret token only
+4. **No database backups** - Risk of data loss
+5. **No production logging** - Only console.log statements
+6. **Single-server architecture** - Cannot scale horizontally
+7. **No CI/CD pipeline** - Manual deployments only
+8. **Memory leak in conversation state** - Unbounded growth
+9. **No error monitoring** - Production errors invisible
+
+### Top Strengths Identified
+
+1. **Innovative Hybrid AI Architecture** - LM Studio + Claude scoring
+2. **Pipeline Optimization** - 30-40% latency reduction
+3. **Natural Turn-Taking** - Competitive response scoring
+4. **Clean Service Layer** - Good separation of concerns
+5. **Excellent WebSocket Management** - Proper event handling
+
+### Production Readiness Checklist
+
+**DO NOT DEPLOY TO PRODUCTION UNTIL:**
+- [ ] Critical security issues resolved (JWT auth, input validation, rate limiting)
+- [ ] Test coverage >70%
+- [ ] Logging and monitoring implemented (Winston, Sentry)
+- [ ] Database backups enabled
+- [ ] API retry logic added
+- [ ] Memory leaks fixed
+- [ ] CI/CD pipeline operational
+
+### Estimated Timeline to Production Ready
+- **Minimum viable fixes:** 4-5 weeks
+- **Full production ready:** 8-10 weeks
+- **Enterprise grade:** 12-14 weeks
+
+For detailed breakdown of all issues and action plan, see **`critical-fixes.md`**.
